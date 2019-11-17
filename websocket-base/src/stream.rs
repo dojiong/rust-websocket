@@ -13,15 +13,11 @@ impl<S> Stream for S where S: Read + Write {}
 /// stream to talk websockets over then this is the struct for you!
 ///
 /// This is useful if you want to use different mediums for different directions.
-pub struct ReadWritePair<R, W>(pub R, pub W)
-where
-	R: Read,
-	W: Write;
+pub struct ReadWritePair<R, W>(pub R, pub W);
 
 impl<R, W> Read for ReadWritePair<R, W>
 where
 	R: Read,
-	W: Write,
 {
 	#[inline(always)]
 	fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
@@ -43,7 +39,6 @@ where
 
 impl<R, W> Write for ReadWritePair<R, W>
 where
-	R: Read,
 	W: Write,
 {
 	#[inline(always)]
@@ -68,11 +63,12 @@ where
 #[cfg(feature = "async")]
 pub mod r#async {
 	pub use super::ReadWritePair;
-	use futures::Poll;
-	use std::io::{self, Read, Write};
-	pub use tokio_io::io::{ReadHalf, WriteHalf};
-	pub use tokio_io::{AsyncRead, AsyncWrite};
-	pub use tokio_tcp::TcpStream;
+	use bytes::{Buf, BufMut};
+	use std::io;
+	use std::pin::Pin;
+	use std::task::{Context, Poll};
+	pub use tokio::io::{AsyncRead, AsyncWrite};
+	pub use tokio::net::tcp::TcpStream;
 
 	/// A stream that can be read from and written to asynchronously.
 	/// This let's us abstract over many async streams like tcp, ssl,
@@ -82,18 +78,66 @@ pub mod r#async {
 
 	impl<R, W> AsyncRead for ReadWritePair<R, W>
 	where
-		R: AsyncRead,
-		W: Write,
+		R: AsyncRead + Unpin,
+		W: Unpin,
 	{
+		fn poll_read(
+			mut self: Pin<&mut Self>,
+			cx: &mut Context,
+			buf: &mut [u8],
+		) -> Poll<Result<usize, io::Error>> {
+			Pin::new(&mut self.0).poll_read(cx, buf)
+		}
+
+		unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [u8]) -> bool {
+			self.0.prepare_uninitialized_buffer(buf)
+		}
+
+		fn poll_read_buf<B: BufMut>(
+			mut self: Pin<&mut Self>,
+			cx: &mut Context,
+			buf: &mut B,
+		) -> Poll<Result<usize, io::Error>>
+		where
+			Self: Sized,
+		{
+			Pin::new(&mut self.0).poll_read_buf(cx, buf)
+		}
 	}
 
 	impl<R, W> AsyncWrite for ReadWritePair<R, W>
 	where
-		W: AsyncWrite,
-		R: Read,
+		W: AsyncWrite + Unpin,
+		R: Unpin,
 	{
-		fn shutdown(&mut self) -> Poll<(), io::Error> {
-			self.1.shutdown()
+		fn poll_write(
+			mut self: Pin<&mut Self>,
+			cx: &mut Context,
+			buf: &[u8],
+		) -> Poll<Result<usize, io::Error>> {
+			Pin::new(&mut self.1).poll_write(cx, buf)
+		}
+
+		fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), io::Error>> {
+			Pin::new(&mut self.1).poll_flush(cx)
+		}
+
+		fn poll_shutdown(
+			mut self: Pin<&mut Self>,
+			cx: &mut Context,
+		) -> Poll<Result<(), io::Error>> {
+			Pin::new(&mut self.1).poll_shutdown(cx)
+		}
+
+		fn poll_write_buf<B: Buf>(
+			mut self: Pin<&mut Self>,
+			cx: &mut Context,
+			buf: &mut B,
+		) -> Poll<Result<usize, io::Error>>
+		where
+			Self: Sized,
+		{
+			Pin::new(&mut self.1).poll_write_buf(cx, buf)
 		}
 	}
 }

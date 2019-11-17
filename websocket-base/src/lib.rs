@@ -24,11 +24,7 @@ extern crate bitflags;
 extern crate native_tls;
 
 #[cfg(feature = "async")]
-extern crate tokio_codec;
-#[cfg(feature = "async")]
-extern crate tokio_io;
-#[cfg(feature = "async")]
-extern crate tokio_tcp;
+extern crate tokio;
 #[cfg(feature = "async-ssl")]
 extern crate tokio_tls;
 

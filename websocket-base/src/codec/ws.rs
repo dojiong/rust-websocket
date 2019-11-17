@@ -8,7 +8,7 @@
 //! dataframes see the documentation for `DataFrameCodec`
 
 extern crate bytes;
-extern crate tokio_codec;
+extern crate tokio;
 
 use std::borrow::Borrow;
 use std::io::Cursor;
@@ -17,8 +17,7 @@ use std::mem;
 
 use self::bytes::BufMut;
 use self::bytes::BytesMut;
-use self::tokio_codec::Decoder;
-use self::tokio_codec::Encoder;
+use tokio::codec::{Decoder, Encoder};
 
 use crate::dataframe::DataFrame;
 use crate::message::OwnedMessage;
@@ -307,7 +306,7 @@ mod tests {
 	use crate::message::CloseData;
 	use crate::message::Message;
 	use crate::stream::ReadWritePair;
-	use futures::{Future, Sink, Stream};
+	use futures::prelude::*;
 	use std::io::Cursor;
 
 	#[test]
@@ -367,67 +366,53 @@ mod tests {
 		}
 	}
 
-	#[test]
-	fn message_codec_client_send_receive() {
+	#[tokio::test]
+	async fn message_codec_client_send_receive() {
 		let mut input = Vec::new();
 		Message::text("50 schmeckels")
 			.serialize(&mut input, false)
 			.unwrap();
 
-		let f = MessageCodec::new(Context::Client)
-			.framed(ReadWritePair(Cursor::new(input), Cursor::new(vec![])))
-			.into_future()
-			.map_err(|e| e.0)
-			.map(|(m, s)| {
-				assert_eq!(m, Some(OwnedMessage::Text("50 schmeckels".to_string())));
-				s
-			})
-			.and_then(|s| s.send(Message::text("ethan bradberry")))
-			.and_then(|s| {
-				let mut stream = s.into_parts().io;
-				stream.1.set_position(0);
-				println!("buffer: {:?}", stream.1);
-				MessageCodec::default(Context::Server)
-					.framed(ReadWritePair(stream.1, stream.0))
-					.into_future()
-					.map_err(|e| e.0)
-					.map(|(message, _)| {
-						assert_eq!(message, Some(Message::text("ethan bradberry").into()))
-					})
-			});
+		let mut stream =
+			MessageCodec::new(Context::Client).framed(ReadWritePair(Cursor::new(input), vec![]));
+		let message = stream.next().await;
+		assert_eq!(
+			message.unwrap().unwrap(),
+			OwnedMessage::Text("50 schmeckels".to_string())
+		);
+		stream.send(Message::text("ethan bradberry")).await.unwrap();
+		let encoded = stream.into_parts().io.1;
 
-		tokio::runtime::Builder::new()
-			.build()
-			.unwrap()
-			.block_on(f)
-			.unwrap();
+		let message = MessageCodec::default(Context::Server)
+			.framed(ReadWritePair(Cursor::new(encoded), Vec::new()))
+			.next()
+			.await;
+		assert_eq!(
+			message.unwrap().unwrap(),
+			Message::text("ethan bradberry").into()
+		);
 	}
 
-	#[test]
-	fn message_codec_server_send_receive() {
-		let mut runtime = tokio::runtime::Builder::new().build().unwrap();
+	#[tokio::test]
+	async fn message_codec_server_send_receive() {
 		let mut input = Vec::new();
 		Message::text("50 schmeckels")
 			.serialize(&mut input, true)
 			.unwrap();
 
-		let f = MessageCodec::new(Context::Server)
-			.framed(ReadWritePair(Cursor::new(input), Cursor::new(vec![])))
-			.into_future()
-			.map_err(|e| e.0)
-			.map(|(m, s)| {
-				assert_eq!(m, Some(OwnedMessage::Text("50 schmeckels".to_string())));
-				s
-			})
-			.and_then(|s| s.send(Message::text("ethan bradberry")))
-			.map(|s| {
-				let mut written = vec![];
-				Message::text("ethan bradberry")
-					.serialize(&mut written, false)
-					.unwrap();
-				assert_eq!(written, s.into_parts().io.1.into_inner());
-			});
+		let mut stream =
+			MessageCodec::new(Context::Server).framed(ReadWritePair(Cursor::new(input), vec![]));
+		let message = stream.next().await;
+		assert_eq!(
+			message.unwrap().unwrap(),
+			OwnedMessage::Text("50 schmeckels".to_string())
+		);
+		stream.send(Message::text("ethan bradberry")).await.unwrap();
 
-		runtime.block_on(f).unwrap();
+		let mut written = vec![];
+		Message::text("ethan bradberry")
+			.serialize(&mut written, false)
+			.unwrap();
+		assert_eq!(written, stream.into_parts().io.1);
 	}
 }
