@@ -65,10 +65,11 @@ pub mod r#async {
 	pub use super::ReadWritePair;
 	use bytes::{Buf, BufMut};
 	use std::io;
+	use std::mem::MaybeUninit;
 	use std::pin::Pin;
 	use std::task::{Context, Poll};
 	pub use tokio::io::{AsyncRead, AsyncWrite};
-	pub use tokio::net::tcp::TcpStream;
+	pub use tokio::net::TcpStream;
 
 	/// A stream that can be read from and written to asynchronously.
 	/// This let's us abstract over many async streams like tcp, ssl,
@@ -89,7 +90,7 @@ pub mod r#async {
 			Pin::new(&mut self.0).poll_read(cx, buf)
 		}
 
-		unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [u8]) -> bool {
+		unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [MaybeUninit<u8>]) -> bool {
 			self.0.prepare_uninitialized_buffer(buf)
 		}
 

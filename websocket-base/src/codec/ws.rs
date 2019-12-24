@@ -15,9 +15,10 @@ use std::io::Cursor;
 use std::marker::PhantomData;
 use std::mem;
 
+use self::bytes::buf::BufMutExt;
 use self::bytes::BufMut;
 use self::bytes::BytesMut;
-use tokio::codec::{Decoder, Encoder};
+use tokio_util::codec::{Decoder, Encoder};
 
 use crate::dataframe::DataFrame;
 use crate::message::OwnedMessage;
