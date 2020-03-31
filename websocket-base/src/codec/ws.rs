@@ -128,14 +128,13 @@ impl<D> Decoder for DataFrameCodec<D> {
 	}
 }
 
-impl<D> Encoder for DataFrameCodec<D>
+impl<D> Encoder<D> for DataFrameCodec<D>
 where
 	D: Borrow<dyn DataFrameTrait>,
 {
-	type Item = D;
 	type Error = WebSocketError;
 
-	fn encode(&mut self, item: Self::Item, dst: &mut BytesMut) -> Result<(), Self::Error> {
+	fn encode(&mut self, item: D, dst: &mut BytesMut) -> Result<(), Self::Error> {
 		let masked = !self.is_server;
 		let frame_size = item.borrow().frame_size(masked);
 		if frame_size > dst.remaining_mut() {
@@ -283,14 +282,13 @@ where
 	}
 }
 
-impl<M> Encoder for MessageCodec<M>
+impl<M> Encoder<M> for MessageCodec<M>
 where
 	M: MessageTrait,
 {
-	type Item = M;
 	type Error = WebSocketError;
 
-	fn encode(&mut self, item: Self::Item, dst: &mut BytesMut) -> Result<(), Self::Error> {
+	fn encode(&mut self, item: M, dst: &mut BytesMut) -> Result<(), Self::Error> {
 		let masked = !self.dataframe_codec.is_server;
 		let frame_size = item.message_size(masked);
 		if frame_size > dst.remaining_mut() {
